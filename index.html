@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <link rel="manifest" href="/manifest.json">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>複雑な3Dモデル描画と高負荷CPUテスト (Three.js)</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/GLTFLoader.js"></script>
+    <script>
+        // シーン、カメラ、レンダラーの作成
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // 環境光を追加
+        const ambientLight = new THREE.AmbientLight(0x404040, 2);
+        scene.add(ambientLight);
+
+        // ディレクショナルライトを追加
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 10, 7.5);
+        scene.add(directionalLight);
+
+        // 立方体を大量に追加
+        const cubes = [];
+        const cubeGeometry = new THREE.BoxGeometry();
+        const cubeMaterial = new THREE.MeshStandardMaterial({
+            color: 0x0077ff,
+            metalness: 0.5,
+            roughness: 0.1
+        });
+
+        for (let i = 0; i < 10000; i++) {
+            const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+            cube.position.set(
+                Math.random() * 20 - 10,
+                Math.random() * 20 - 10,
+                Math.random() * 20 - 10
+            );
+            cube.rotation.set(
+                Math.random() * Math.PI,
+                Math.random() * Math.PI,
+                Math.random() * Math.PI
+            );
+            scene.add(cube);
+            cubes.push(cube);
+        }
+
+        // 球体を追加
+        const spheres = [];
+        const sphereGeometry = new THREE.SphereGeometry(1, 100, 100);
+        const sphereMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff7700,
+            metalness: 0.8,
+            roughness: 0.2
+        });
+
+        for (let i = 0; i < 10000; i++) {
+            const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+            sphere.position.set(
+                Math.random() * 20 - 10,
+                Math.random() * 20 - 10,
+                Math.random() * 20 - 10
+            );
+            scene.add(sphere);
+            spheres.push(sphere);
+        }
+
+        // 床を追加
+        const floorGeometry = new THREE.PlaneGeometry(100, 100);
+        const floorMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            metalness: 0.9,
+            roughness: 0.05
+        });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = - Math.PI / 2;
+        floor.position.y = -10;
+        scene.add(floor);
+
+        // カメラの位置設定
+        camera.position.z = 30;
+
+        // CPU負荷をかけるワーカーのコード
+        const workerCode = `
+            function calculatePrimes(iterations, multiplier) {
+                const primes = [];
+                for (let i = 0; i < iterations; i++) {
+                    let num = i * multiplier;
+                    let isPrime = true;
+                    for (let j = 2; j <= Math.sqrt(num); j++) {
+                        if (num % j === 0) {
+                            isPrime = false;
+                            break;
+                        }
+                    }
+                    if (isPrime && num > 1) {
+                        primes.push(num);
+                    }
+                }
+                return primes.length;
+            }
+
+            function runCPUTest() {
+                while (true) {
+                    calculatePrimes(1000000, 10);
+                }
+            }
+
+            runCPUTest();
+        `;
+
+        // 複数のワーカーを作成
+        const numWorkers = navigator.hardwareConcurrency || 4;
+        const workers = [];
+        for (let i = 0; i < numWorkers; i++) {
+            const worker = new Worker(URL.createObjectURL(new Blob([workerCode])));
+            workers.push(worker);
+        }
+
+        // メインスレッドでも計算を行う関数
+        function mainThreadCalculation() {
+            const result = calculatePrimes(100000, 5);
+            setTimeout(mainThreadCalculation, 0);
+        }
+
+        function calculatePrimes(iterations, multiplier) {
+            const primes = [];
+            for (let i = 0; i < iterations; i++) {
+                let num = i * multiplier;
+                let isPrime = true;
+                for (let j = 2; j <= Math.sqrt(num); j++) {
+                    if (num % j === 0) {
+                        isPrime = false;
+                        break;
+                    }
+                }
+                if (isPrime && num > 1) {
+                    primes.push(num);
+                }
+            }
+            return primes.length;
+        }
+
+        // メインスレッドの計算を開始
+        mainThreadCalculation();
+
+        // アニメーションループ
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 立方体と球体を回転させる
+            cubes.forEach(cube => {
+                cube.rotation.x += 0.01;
+                cube.rotation.y += 0.01;
+            });
+
+            spheres.forEach(sphere => {
+                sphere.rotation.x += 0.01;
+                sphere.rotation.y += 0.01;
+            });
+
+            // シーンをレンダリング
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // ウィンドウのリサイズに対応
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+
+    </script>
+</body>
+</html>
